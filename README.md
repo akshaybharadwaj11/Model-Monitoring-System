@@ -1,6 +1,6 @@
 # 🤖 ML Model Monitoring System with Reinforcement Learning
 
-> **Building Agentic Systems Assignment - Production-Grade Solution**  
+> **Building Agentic Systems Solution**  
 > Automated ML model monitoring with RL-based remediation and MCP server architecture
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
@@ -253,228 +253,6 @@ reward = (accuracy_gain × 200)      # Primary signal
 
 ---
 
-## 📊 Results & Metrics
-
-### System Performance
-
-```
-Metric                    | Value
---------------------------|------------------
-Total Episodes            | 31
-Success Rate (Initial)    | 45%
-Success Rate (Final)      | 84% (↑87%)
-Avg Reward (Initial)      | -2.3
-Avg Reward (Final)        | 12.5 (↑441%)
-Successful Remediations   | 26/31 (84%)
-Cost Saved                | $127,500
-Avg Processing Time       | 0.8 seconds/cycle
-```
-
-### RL Learning Curve
-
-The system demonstrates clear learning:
-- **Episode 1-10:** Random exploration, negative rewards
-- **Episode 11-20:** Pattern recognition, positive rewards
-- **Episode 21-30:** Optimal policy, consistent high rewards
-
-### Action Distribution (After Learning)
-
-```
-Action                  | Count | Success Rate
-------------------------|-------|-------------
-Continue Monitoring     | 18    | 72%
-Retrain in 3 Days      | 5     | 80%
-Retrain Immediately    | 3     | 100%
-Adjust Threshold       | 2     | 50%
-Increase Monitoring    | 2     | 100%
-Retrain in 7 Days      | 1     | 100%
-Rollback              | 0     | N/A
-```
-
-**Key Insight:** RL agent learned that "Continue Monitoring" is optimal for stable models, but switches to immediate retraining when critical.
-
----
-
-## 🎬 Demo Video Script (5 Minutes)
-
-### Minute 1: Introduction
-"This is an ML model monitoring system with reinforcement learning. It automatically detects when models degrade and learns optimal remediation strategies."
-
-### Minute 2: System Architecture
-[Show architecture diagram]
-"5 specialized agents work together using 3 MCP servers for data storage. The RL agent learns from every remediation decision."
-
-### Minute 3: Running Simulation
-```bash
-python main_simulation.py --model pneumonia_classifier_v1
-```
-[Show console output scrolling]
-"Watch the RL agent learn - success rate improves from 45% to 84% over 30 days."
-
-### Minute 4: Results Visualization
-[Show 4-panel plot]
-"Panel 1: Accuracy drops then recovers
-Panel 2: Drift increases then decreases
-Panel 3: RL rewards improve over time
-Panel 4: Agent learns to prefer certain actions"
-
-### Minute 5: Key Features
-"Key innovations:
-1. RL-based remediation (not rules)
-2. MCP architecture for scalability
-3. Multi-agent coordination
-4. Measurable improvement: 45% → 84% success"
-
----
-
-## 📁 Project Files
-
-### Core System (6 files)
-
-```
-ml-monitoring-system/
-├── data_simulator.py           (300 lines) - Generate realistic data
-├── rl_agents.py               (450 lines) - RL remediation + bandit
-├── mcp_servers.py             (400 lines) - 3 MCP servers
-├── specialized_monitoring_agents.py (250 lines) - 5 agents
-├── controller_with_rl.py      (350 lines) - Main orchestrator
-└── main_simulation.py         (400 lines) - Entry point
-```
-
-### Auto-Generated
-
-```
-simulated_data/                  - Model predictions & metrics
-├── pneumonia_classifier_v1/
-│   ├── predictions.csv         (150,000 rows)
-│   ├── metrics.csv            (30 rows)
-│   └── drift_scores.csv       (30 rows)
-└── ...
-
-simulation_results/              - Outputs
-├── final_report_*.json         - Complete results
-├── simulation_plots_*.png      - Visualizations
-└── rl_policy.pt               - Trained RL agent
-```
-
----
-
-## 🎯 Assignment Rubric Alignment
-
-### Technical Implementation (40/40 points)
-
-**Controller Design (10/10):**
-✅ Sophisticated orchestration with task delegation  
-✅ Comprehensive error handling and fallback mechanisms  
-✅ Memory management across agent interactions  
-✅ Clear communication protocols
-
-**Agent Integration (10/10):**
-✅ 5 specialized agents with distinct roles  
-✅ Memory systems for contextual awareness  
-✅ Effective prompting strategies  
-✅ Strong collaboration and coordination
-
-**Tool Implementation (10/10):**
-✅ 3 MCP servers (production-style data layer)  
-✅ Appropriate error handling  
-✅ Well-configured parameters  
-✅ Clean tool-agent interaction
-
-**Custom Tool Development (10/10):**
-✅ Original RL-based remediation selector  
-✅ Clean code with comprehensive documentation  
-✅ Measurable performance improvement  
-✅ Strong integration with system
-
-### System Performance (30/30 points)
-
-**Functionality (10/10):**
-✅ Meets all stated objectives  
-✅ Accurate and efficient task completion  
-✅ Handles edge cases gracefully  
-✅ Maintains context and coherence
-
-**Robustness (10/10):**
-✅ Comprehensive error handling  
-✅ Performance under various conditions  
-✅ Effective memory management  
-✅ Scalable architecture
-
-**User Experience (10/10):**
-✅ Clear and helpful outputs  
-✅ High-quality, relevant responses  
-✅ Fast and responsive (0.8s/cycle)  
-✅ Excellent usability
-
-### Documentation & Presentation (20/20 points)
-
-**Technical Documentation (10/10):**
-✅ 40+ page comprehensive report  
-✅ Clear architecture diagrams  
-✅ Thorough code documentation  
-✅ Complete setup instructions
-
-**Demonstration Quality (10/10):**
-✅ Clear 5-minute video  
-✅ Effective feature demonstration  
-✅ Good explanation of design decisions  
-✅ Professional presentation
-
-### Quality/Portfolio Score (20/20 - Top 25%)
-
-✅ **Real-world applicability:** Solves actual production ML problem  
-✅ **Innovation:** Novel RL integration with measurable improvement  
-✅ **Technical excellence:** Production-grade architecture  
-✅ **Outstanding documentation:** Comprehensive and professional  
-✅ **Scalability:** Designed for enterprise deployment
-
-**Expected Total: 110/100 points** (10 bonus for exceptional quality)
-
----
-
-## 🔬 Technical Deep Dives
-
-### Why This Architecture?
-
-**MCP Servers vs. Direct Storage:**
-- ✅ Separation of concerns
-- ✅ Multiple agents can share data
-- ✅ Easy to swap implementations (memory → PostgreSQL)
-- ✅ Industry best practice
-
-**RL vs. Rule-Based:**
-- ✅ Learns from experience (improves over time)
-- ✅ Adapts to changing conditions
-- ✅ Optimizes cost-benefit tradeoffs
-- ✅ No manual threshold tuning
-
-**Multi-Agent vs. Single Agent:**
-- ✅ Specialization improves quality
-- ✅ Easier to test and debug
-- ✅ Can run agents in parallel
-- ✅ Better separation of concerns
-
-### Production Deployment Path
-
-**Phase 1 (Demo - Current):**
-- In-memory data storage
-- Simulated model predictions
-- Single machine execution
-
-**Phase 2 (Pilot):**
-- PostgreSQL for MCP servers
-- Connect to 1-2 real models
-- Slack notifications for alerts
-
-**Phase 3 (Production):**
-- Distributed execution (Kubernetes)
-- Monitor 100s of models
-- Integration with MLOps tools
-- Real-time dashboards
-
----
-
 ## 🚀 Running Instructions
 
 ### Quick Start
@@ -503,14 +281,6 @@ python main_simulation.py  # Run 2 (uses saved RL policy)
 python main_simulation.py  # Run 3 (continues learning)
 ```
 
-### Expected Runtime
-
-- **Data Generation:** 30 seconds
-- **MCP Loading:** 10 seconds
-- **Simulation (30 days):** 1-2 minutes
-- **Visualization:** 5 seconds
-- **Total:** ~2-3 minutes
-
 ---
 
 ## 📚 Learning Resources
@@ -530,39 +300,10 @@ python main_simulation.py  # Run 3 (continues learning)
 
 ---
 
-## 🏆 What Makes This Exceptional
-
-1. **Novel RL Integration**
-   - Not just using RL, but showing clear learning
-   - Measurable improvement (45% → 84%)
-   - Production-applicable approach
-
-2. **Production Architecture**
-   - MCP servers (not toy storage)
-   - Multi-agent coordination
-   - Scalable design
-
-3. **Complete System**
-   - Data generation (no model training needed)
-   - Full monitoring workflow
-   - Comprehensive evaluation
-
-4. **Outstanding Documentation**
-   - 40+ page technical report
-   - Clear code comments
-   - Step-by-step setup guide
-
-5. **Portfolio Quality**
-   - Shows ML + Software Engineering skills
-   - Demonstrates production thinking
-   - Ready to showcase to employers
-
----
-
 ## 👨‍💻 Author
 
 **Akshay Bharadwaj**  
-MS Computer Science Engineering @ Northeastern University  
+MS CSE @ Northeastern University  
 
 ---
 
@@ -576,9 +317,6 @@ MIT License - Free to use for educational and commercial purposes
 
 - **CrewAI** - Multi-agent orchestration framework
 - **PyTorch** - Deep learning and RL implementation
-- **OpenAI** - LLM integration (optional)
-- **Anthropic** - Assignment design and guidance
+- **OpenAI** - LLM integration
 
 ---
-
-**Run:** `python main_simulation.py --model pneumonia_classifier_v1`
