@@ -11,8 +11,33 @@ import json
 
 def create_monitoring_agents(llm: ChatOpenAI, mcp_manager) -> Dict[str, Agent]:
     """
-    Create all specialized monitoring agents
+    Create all specialized monitoring agents with MCP tools
     """
+    
+    # Import MCP tools
+    from mcp_servers import (
+        QueryPredictionsTool,
+        QueryMetricsTool, 
+        QueryDriftTool,
+        QueryModelHealthTool,
+        CreateAlertTool
+    )
+    
+    # Create tool instances with MCP manager
+    query_predictions_tool = QueryPredictionsTool()
+    query_predictions_tool.mcp_manager = mcp_manager
+    
+    query_metrics_tool = QueryMetricsTool()
+    query_metrics_tool.mcp_manager = mcp_manager
+    
+    query_drift_tool = QueryDriftTool()
+    query_drift_tool.mcp_manager = mcp_manager
+    
+    query_health_tool = QueryModelHealthTool()
+    query_health_tool.mcp_manager = mcp_manager
+    
+    create_alert_tool = CreateAlertTool()
+    create_alert_tool.mcp_manager = mcp_manager
     
     # Agent 1: Performance Monitoring Agent
     performance_agent = Agent(
@@ -29,7 +54,8 @@ def create_monitoring_agents(llm: ChatOpenAI, mcp_manager) -> Dict[str, Agent]:
         allow_delegation=False,
         llm=llm,
         memory=True,
-        max_iter=15
+        max_iter=15,
+        tools=[query_predictions_tool, query_metrics_tool, query_health_tool]
     )
     
     # Agent 2: Data Drift Detection Agent
@@ -47,7 +73,8 @@ def create_monitoring_agents(llm: ChatOpenAI, mcp_manager) -> Dict[str, Agent]:
         allow_delegation=False,
         llm=llm,
         memory=True,
-        max_iter=15
+        max_iter=15,
+        tools=[query_drift_tool, query_metrics_tool]
     )
     
     # Agent 3: Model Quality Analyzer
@@ -65,7 +92,8 @@ def create_monitoring_agents(llm: ChatOpenAI, mcp_manager) -> Dict[str, Agent]:
         allow_delegation=False,
         llm=llm,
         memory=True,
-        max_iter=15
+        max_iter=15,
+        tools=[query_predictions_tool, query_metrics_tool]
     )
     
     # Agent 4: Alert & Incident Manager
@@ -83,7 +111,8 @@ def create_monitoring_agents(llm: ChatOpenAI, mcp_manager) -> Dict[str, Agent]:
         allow_delegation=True,
         llm=llm,
         memory=True,
-        max_iter=15
+        max_iter=15,
+        tools=[create_alert_tool, query_health_tool]
     )
     
     # Agent 5: Remediation Planner (uses RL agent)
@@ -101,7 +130,8 @@ def create_monitoring_agents(llm: ChatOpenAI, mcp_manager) -> Dict[str, Agent]:
         allow_delegation=True,
         llm=llm,
         memory=True,
-        max_iter=20
+        max_iter=20,
+        tools=[query_health_tool, query_metrics_tool, query_drift_tool]
     )
     
     return {

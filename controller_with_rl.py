@@ -3,7 +3,7 @@ Controller/Orchestrator for ML Model Monitoring System
 Integrates RL agents, MCP servers, and specialized agents
 """
 
-from crewai import Crew, Process
+from crewai import Crew, Process, Agent, Task
 from datetime import datetime
 from typing import Dict, Any, List
 import logging
@@ -75,9 +75,15 @@ class ModelMonitoringOrchestrator:
             
             agents = create_monitoring_agents(self.llm, self.mcp_manager)
             
-            # Simplified task execution (no actual LLM calls for demo)
-            # In production, this would run the full CrewAI workflow
-            analysis_results = self._simulate_agent_analysis(monitoring_data, model_id)
+            # Execute agent analysis
+            if self.llm is not None:
+                logger.info("\n--- Running REAL LLM Agent Analysis ---")
+                analysis_results = self._execute_llm_agent_workflow(
+                    agents, model_id, monitoring_data
+                )
+            else:
+                logger.info("\n--- Running Simulated Agent Analysis ---")
+                analysis_results = self._simulate_agent_analysis(monitoring_data, model_id)
             
             # RL Agent selects remediation action
             logger.info("\n--- RL Remediation Agent Decision ---")
@@ -125,6 +131,212 @@ class ModelMonitoringOrchestrator:
                 'status': 'error',
                 'error': str(e)
             }
+    
+    def _execute_llm_agent_workflow(
+        self,
+        agents: Dict[str, Agent],
+        model_id: str,
+        monitoring_data: Dict
+    ) -> Dict[str, Any]:
+        """
+        Execute REAL CrewAI workflow with LLM agents
+        This makes actual OpenAI API calls
+        """
+        from crewai import Crew, Task, Process
+        
+        try:
+            # Create tasks for the workflow
+            tasks = self._create_llm_tasks(agents, model_id, monitoring_data)
+            
+            # Create crew
+            crew = Crew(
+                agents=list(agents.values()),
+                tasks=tasks,
+                process=Process.sequential,
+                verbose=True,
+                memory=False,  # Disable memory to reduce context
+                max_rpm=10  # Rate limit
+            )
+            
+            logger.info("Executing CrewAI workflow with LLM agents...")
+            
+            # Execute crew (THIS MAKES REAL API CALLS)
+            result = crew.kickoff()
+            
+            logger.info("LLM workflow complete!")
+            
+            # Parse LLM output into structured analysis
+            analysis_results = self._parse_llm_output(result, monitoring_data)
+            
+            return analysis_results
+            
+        except Exception as e:
+            logger.error(f"Error in LLM workflow: {str(e)}")
+            logger.info("Falling back to simulation mode...")
+            return self._simulate_agent_analysis(monitoring_data, model_id)
+    
+    def _create_llm_tasks(
+        self,
+        agents: Dict[str, Agent],
+        model_id: str,
+        monitoring_data: Dict
+    ) -> List[Task]:
+        """
+        Create CrewAI tasks for LLM execution
+        """
+        tasks = []
+        
+        # Task 1: Performance Analysis
+        performance_task = Task(
+            description=f"""
+            Analyze performance for model: {model_id}
+            
+            Use the Query Performance Metrics tool to get:
+            - Current accuracy (last 24 hours)
+            - Latency metrics
+            - Error rates
+            
+            Current status from monitoring:
+            - Accuracy: {monitoring_data['current_accuracy']:.3f}
+            - Drift Score: {monitoring_data['drift_score']:.3f}
+            
+            Determine the performance status:
+            - healthy (accuracy >= 0.85, drift < 0.15)
+            - warning (accuracy >= 0.80, drift < 0.25)
+            - critical (accuracy < 0.80 or drift >= 0.25)
+            
+            Output JSON format:
+            {{
+                "status": "healthy|warning|critical",
+                "accuracy": float,
+                "recommendation": "string"
+            }}
+            """,
+            agent=agents['performance_agent'],
+            expected_output="JSON with performance status"
+        )
+        tasks.append(performance_task)
+        
+        # Task 2: Drift Detection
+        drift_task = Task(
+            description=f"""
+            Detect drift for model: {model_id}
+            
+            Use the Query Drift Scores tool to analyze:
+            - Covariate drift
+            - Prediction drift  
+            - Concept drift
+            
+            Current drift score: {monitoring_data['drift_score']:.3f}
+            
+            Classify drift level:
+            - low: < 0.15
+            - medium: 0.15-0.25
+            - high: 0.25-0.35
+            - critical: >= 0.35
+            
+            Output JSON format:
+            {{
+                "level": "low|medium|high|critical",
+                "score": float,
+                "urgency": "monitor|action_within_7_days|action_within_3_days|immediate_action"
+            }}
+            """,
+            agent=agents['drift_agent'],
+            expected_output="JSON with drift assessment",
+            context=[performance_task]
+        )
+        tasks.append(drift_task)
+        
+        # Task 3: Alert Decision (simplified)
+        alert_task = Task(
+            description=f"""
+            Decide if alerts should be created for model: {model_id}
+            
+            Based on previous analyses, determine:
+            - Should we create an alert?
+            - What severity? (low/medium/high/critical)
+            
+            If alert is needed, use Create Alert tool.
+            
+            Output JSON format:
+            {{
+                "should_alert": boolean,
+                "triggered": boolean,
+                "severity": "string"
+            }}
+            """,
+            agent=agents['alert_agent'],
+            expected_output="JSON with alert decision",
+            context=[performance_task, drift_task]
+        )
+        tasks.append(alert_task)
+        
+        return tasks
+    
+    def _parse_llm_output(
+        self, 
+        crew_result: Any, 
+        monitoring_data: Dict
+    ) -> Dict[str, Any]:
+        """
+        Parse LLM output into structured analysis results
+        """
+        try:
+            # Try to extract JSON from crew result
+            result_str = str(crew_result)
+            
+            # Parse performance status
+            if 'critical' in result_str.lower():
+                performance_status = 'critical'
+            elif 'warning' in result_str.lower():
+                performance_status = 'warning'
+            else:
+                performance_status = 'healthy'
+            
+            # Parse drift level
+            drift_score = monitoring_data['drift_score']
+            if drift_score < 0.15:
+                drift_level = 'low'
+                drift_urgency = 'monitor'
+            elif drift_score < 0.25:
+                drift_level = 'medium'
+                drift_urgency = 'action_within_7_days'
+            elif drift_score < 0.35:
+                drift_level = 'high'
+                drift_urgency = 'action_within_3_days'
+            else:
+                drift_level = 'critical'
+                drift_urgency = 'immediate_action'
+            
+            # Parse alert decision
+            should_alert = performance_status in ['warning', 'critical'] or drift_level in ['high', 'critical']
+            
+            return {
+                'performance': {
+                    'status': performance_status,
+                    'accuracy': monitoring_data['current_accuracy'],
+                    'recommendation': f"Status is {performance_status}"
+                },
+                'drift': {
+                    'level': drift_level,
+                    'score': drift_score,
+                    'urgency': drift_urgency
+                },
+                'quality': {
+                    'score': monitoring_data['current_accuracy'] * 100
+                },
+                'alert': {
+                    'triggered': should_alert,
+                    'should_alert': should_alert
+                },
+                'llm_output': result_str[:500]  # Store first 500 chars of LLM output
+            }
+            
+        except Exception as e:
+            logger.error(f"Error parsing LLM output: {str(e)}")
+            # Fallback to simple parsing
+            return self._simulate_agent_analysis(monitoring_data, "unknown")
     
     def _simulate_agent_analysis(
         self,

@@ -6,7 +6,7 @@ In production: would use PostgreSQL with full MCP protocol
 
 import json
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Type
 import pandas as pd
 from dataclasses import dataclass, asdict
 import threading
@@ -679,6 +679,105 @@ class MCPManager:
             'model_age_days': 60,
             'previous_action_success': 0.7
         }
+
+
+# ============================================================================
+# Tool Wrappers for CrewAI Agents
+# ============================================================================
+
+from crewai.tools import BaseTool
+from typing import Type
+from pydantic import BaseModel, Field
+
+class QueryPredictionsInput(BaseModel):
+    """Input for querying predictions"""
+    model_id: str = Field(..., description="Model ID to query")
+    hours: int = Field(24, description="Hours of data to retrieve")
+
+class QueryPredictionsTool(BaseTool):
+    name: str = "Query Model Predictions"
+    description: str = "Retrieve model predictions and calculate accuracy over a time window"
+    args_schema: Type[BaseModel] = QueryPredictionsInput
+    mcp_manager: Any = None
+    
+    def _run(self, model_id: str, hours: int = 24) -> str:
+        result = self.mcp_manager.predictions_server.calculate_accuracy(
+            model_id=model_id,
+            window_hours=hours
+        )
+        return json.dumps(result, indent=2)
+
+class QueryMetricsInput(BaseModel):
+    """Input for querying metrics"""
+    model_id: str = Field(..., description="Model ID to query")
+    metric_name: str = Field(..., description="Metric to retrieve (accuracy, latency, etc)")
+
+class QueryMetricsTool(BaseTool):
+    name: str = "Query Performance Metrics"
+    description: str = "Get time-series performance metrics for a model"
+    args_schema: Type[BaseModel] = QueryMetricsInput
+    mcp_manager: Any = None
+    
+    def _run(self, model_id: str, metric_name: str = "accuracy") -> str:
+        result = self.mcp_manager.metrics_server.get_metric_timeseries(
+            model_id=model_id,
+            metric_name=metric_name
+        )
+        return json.dumps(result, indent=2)
+
+class QueryDriftInput(BaseModel):
+    """Input for querying drift scores"""
+    model_id: str = Field(..., description="Model ID to query")
+
+class QueryDriftTool(BaseTool):
+    name: str = "Query Drift Scores"
+    description: str = "Get latest drift scores (covariate, prediction, concept drift)"
+    args_schema: Type[BaseModel] = QueryDriftInput
+    mcp_manager: Any = None
+    
+    def _run(self, model_id: str) -> str:
+        result = self.mcp_manager.metrics_server.get_latest_drift_scores(
+            model_id=model_id
+        )
+        return json.dumps(result, indent=2)
+
+class QueryModelHealthInput(BaseModel):
+    """Input for querying model health"""
+    model_id: str = Field(..., description="Model ID to query")
+
+class QueryModelHealthTool(BaseTool):
+    name: str = "Query Model Health"
+    description: str = "Get overall model health status (healthy/warning/critical)"
+    args_schema: Type[BaseModel] = QueryModelHealthInput
+    mcp_manager: Any = None
+    
+    def _run(self, model_id: str) -> str:
+        result = self.mcp_manager.metrics_server.get_model_health(
+            model_id=model_id
+        )
+        return json.dumps(result, indent=2)
+
+class CreateAlertInput(BaseModel):
+    """Input for creating alerts"""
+    model_id: str = Field(..., description="Model ID")
+    alert_type: str = Field(..., description="Type of alert")
+    severity: str = Field(..., description="Severity level")
+    message: str = Field(..., description="Alert message")
+
+class CreateAlertTool(BaseTool):
+    name: str = "Create Alert"
+    description: str = "Create a new alert for model issues"
+    args_schema: Type[BaseModel] = CreateAlertInput
+    mcp_manager: Any = None
+    
+    def _run(self, model_id: str, alert_type: str, severity: str, message: str) -> str:
+        result = self.mcp_manager.incidents_server.create_alert(
+            model_id=model_id,
+            alert_type=alert_type,
+            severity=severity,
+            message=message
+        )
+        return json.dumps(result, indent=2)
 
 
 if __name__ == "__main__":

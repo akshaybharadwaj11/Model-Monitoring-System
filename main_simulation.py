@@ -14,11 +14,12 @@ import pandas as pd
 import numpy as np
 from langchain_openai import ChatOpenAI
 
-# Import modules
+# Import our modules
 from data_simulator import ModelDataSimulator
 from rl_agents import RLRemediationAgent, ThresholdBandit
 from mcp_servers import MCPManager
 from controller_with_rl import ModelMonitoringOrchestrator
+
 
 class MonitoringSystemSimulation:
     """
@@ -62,14 +63,20 @@ class MonitoringSystemSimulation:
         
         # 4. Initialize LLM (optional)
         if use_llm and openai_api_key:
-            print("\n4. Initializing LLM...")
+            print("\n4. Initializing LLM for REAL agent orchestration...")
+            print("   ⚠️  This will make actual OpenAI API calls")
+            print("   ⚠️  Estimated cost: $1-2 per 30-day simulation")
+            print("   ⚠️  Runtime: 10-15 minutes (vs 2-3 min simulation)")
             self.llm = ChatOpenAI(
                 model="gpt-4o-mini",
                 temperature=0.3,
                 api_key=openai_api_key
             )
         else:
-            print("\n4. Running in simulation mode (no LLM calls)")
+            print("\n4. Running in SIMULATION mode (no LLM calls)")
+            print("   ✅ No API costs")
+            print("   ✅ Fast execution (2-3 minutes)")
+            print("   ✅ Deterministic results")
             self.llm = None
         
         # 5. Initialize orchestrator
@@ -368,7 +375,7 @@ def main():
             print("ERROR: OPENAI_API_KEY environment variable not set")
             print("Run: export OPENAI_API_KEY='your-key-here'")
             sys.exit(1)
-            
+    
     # Run simulation
     print("\n" + "="*80)
     print("ML MODEL MONITORING SYSTEM")
