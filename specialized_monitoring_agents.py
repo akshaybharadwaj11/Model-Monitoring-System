@@ -456,7 +456,7 @@ class AgentPromptStrategies:
 if __name__ == "__main__":
     from langchain_openai import ChatOpenAI
     
-    llm = ChatOpenAI(model="gpt-4", temperature=0.3)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
     
     # Mock MCP manager for testing
     class MockMCPManager:

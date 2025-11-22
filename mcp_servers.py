@@ -8,8 +8,11 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Type
 import pandas as pd
+import numpy as np
 from dataclasses import dataclass, asdict
 import threading
+from pydantic import BaseModel, Field
+from crewai.tools import BaseTool
 
 
 # ============================================================================
@@ -45,7 +48,7 @@ class PredictionsMCPServer:
                 'features': features,
                 'prediction': prediction,
                 'confidence': confidence,
-                'timestamp': timestamp
+                'timestamp': pd.Timestamp(timestamp)  # Convert to pandas Timestamp
             }
             self.predictions.append(pred_entry)
             
@@ -65,7 +68,7 @@ class PredictionsMCPServer:
         with self.lock:
             self.ground_truth[prediction_id] = {
                 'actual_label': actual_label,
-                'timestamp': timestamp
+                'timestamp': pd.Timestamp(timestamp)  # Convert to pandas Timestamp
             }
         
         return {
@@ -85,11 +88,28 @@ class PredictionsMCPServer:
             # Filter by model_id
             filtered = [p for p in self.predictions if p['model_id'] == model_id]
             
-            # Filter by date range
+            # Filter by date range - safe comparison
             if start_date:
-                filtered = [p for p in filtered if p['timestamp'] >= start_date]
+                start_date = pd.Timestamp(start_date)
+                safe_filtered = []
+                for p in filtered:
+                    pred_time = p['timestamp']
+                    if not isinstance(pred_time, pd.Timestamp):
+                        pred_time = pd.Timestamp(pred_time)
+                    if pred_time >= start_date:
+                        safe_filtered.append(p)
+                filtered = safe_filtered
+            
             if end_date:
-                filtered = [p for p in filtered if p['timestamp'] <= end_date]
+                end_date = pd.Timestamp(end_date)
+                safe_filtered = []
+                for p in filtered:
+                    pred_time = p['timestamp']
+                    if not isinstance(pred_time, pd.Timestamp):
+                        pred_time = pd.Timestamp(pred_time)
+                    if pred_time <= end_date:
+                        safe_filtered.append(p)
+                filtered = safe_filtered
             
             # Limit results
             filtered = filtered[:limit]
@@ -106,14 +126,22 @@ class PredictionsMCPServer:
         window_hours: int = 24
     ) -> Dict:
         """Calculate model accuracy over time window"""
-        cutoff_time = datetime.now() - timedelta(hours=window_hours)
+        cutoff_time = pd.Timestamp(datetime.now() - timedelta(hours=window_hours))
         
         with self.lock:
-            # Get recent predictions
-            recent_preds = [
-                p for p in self.predictions
-                if p['model_id'] == model_id and p['timestamp'] >= cutoff_time
-            ]
+            # Get recent predictions - use safe comparison
+            recent_preds = []
+            for p in self.predictions:
+                if p['model_id'] != model_id:
+                    continue
+                
+                # Safe timestamp comparison - convert both to timestamps
+                pred_time = p['timestamp']
+                if not isinstance(pred_time, pd.Timestamp):
+                    pred_time = pd.Timestamp(pred_time)
+                
+                if pred_time >= cutoff_time:
+                    recent_preds.append(p)
             
             # Calculate accuracy where ground truth is available
             correct = 0
@@ -141,20 +169,25 @@ class PredictionsMCPServer:
         """Load predictions from simulated data"""
         with self.lock:
             for _, row in df.iterrows():
+                # Ensure timestamp is pandas Timestamp
+                timestamp = row['timestamp']
+                if not isinstance(timestamp, pd.Timestamp):
+                    timestamp = pd.Timestamp(timestamp)
+                
                 pred_entry = {
                     'prediction_id': row['prediction_id'],
                     'model_id': row['model_id'],
                     'features': {'hash': row['features_hash']},
                     'prediction': row['prediction'],
                     'confidence': row['confidence'],
-                    'timestamp': pd.to_datetime(row['timestamp'])
+                    'timestamp': timestamp
                 }
                 self.predictions.append(pred_entry)
                 
                 # Store ground truth
                 self.ground_truth[row['prediction_id']] = {
                     'actual_label': row['true_label'],
-                    'timestamp': pd.to_datetime(row['timestamp'])
+                    'timestamp': timestamp
                 }
         
         return {
@@ -190,7 +223,7 @@ class MetricsMCPServer:
                 'model_id': model_id,
                 'metric_name': metric_name,
                 'value': value,
-                'timestamp': timestamp
+                'timestamp': pd.Timestamp(timestamp)  # Convert to pandas Timestamp
             }
             self.metrics.append(metric_entry)
         
@@ -213,13 +246,31 @@ class MetricsMCPServer:
                 if m['model_id'] == model_id and m['metric_name'] == metric_name
             ]
             
+            # Safe date filtering
             if start_date:
-                filtered = [m for m in filtered if m['timestamp'] >= start_date]
-            if end_date:
-                filtered = [m for m in filtered if m['timestamp'] <= end_date]
+                start_date = pd.Timestamp(start_date)
+                safe_filtered = []
+                for m in filtered:
+                    m_time = m['timestamp']
+                    if not isinstance(m_time, pd.Timestamp):
+                        m_time = pd.Timestamp(m_time)
+                    if m_time >= start_date:
+                        safe_filtered.append(m)
+                filtered = safe_filtered
             
-            # Sort by timestamp
-            filtered.sort(key=lambda x: x['timestamp'])
+            if end_date:
+                end_date = pd.Timestamp(end_date)
+                safe_filtered = []
+                for m in filtered:
+                    m_time = m['timestamp']
+                    if not isinstance(m_time, pd.Timestamp):
+                        m_time = pd.Timestamp(m_time)
+                    if m_time <= end_date:
+                        safe_filtered.append(m)
+                filtered = safe_filtered
+            
+            # Sort by timestamp safely
+            filtered.sort(key=lambda x: pd.Timestamp(x['timestamp']) if not isinstance(x['timestamp'], pd.Timestamp) else x['timestamp'])
         
         return {
             'status': 'success',
@@ -241,7 +292,7 @@ class MetricsMCPServer:
                 'model_id': model_id,
                 'drift_type': drift_type,
                 'score': score,
-                'timestamp': timestamp
+                'timestamp': pd.Timestamp(timestamp)  # Convert to pandas Timestamp
             }
             self.drift_scores.append(drift_entry)
         
@@ -267,9 +318,16 @@ class MetricsMCPServer:
                     'message': 'No drift scores found'
                 }
             
+            # Sort safely
+            def safe_timestamp(d):
+                ts = d['timestamp']
+                return pd.Timestamp(ts) if not isinstance(ts, pd.Timestamp) else ts
+            
+            model_drifts_sorted = sorted(model_drifts, key=safe_timestamp, reverse=True)
+            
             # Get latest for each drift type
             latest_by_type = {}
-            for drift in sorted(model_drifts, key=lambda x: x['timestamp'], reverse=True):
+            for drift in model_drifts_sorted:
                 drift_type = drift['drift_type']
                 if drift_type not in latest_by_type:
                     latest_by_type[drift_type] = drift
@@ -297,7 +355,12 @@ class MetricsMCPServer:
                 'health': 'unknown'
             }
         
-        latest_accuracy = sorted(accuracy_metrics, key=lambda x: x['timestamp'])[-1]
+        # Safe sorting
+        def safe_timestamp(m):
+            ts = m['timestamp']
+            return pd.Timestamp(ts) if not isinstance(ts, pd.Timestamp) else ts
+        
+        latest_accuracy = sorted(accuracy_metrics, key=safe_timestamp)[-1]
         
         # Get drift scores
         drift_result = self.get_latest_drift_scores(model_id)
@@ -323,8 +386,8 @@ class MetricsMCPServer:
             'status': 'success',
             'model_id': model_id,
             'health': health,
-            'accuracy': accuracy,
-            'max_drift_score': max_drift,
+            'accuracy': float(accuracy),
+            'max_drift_score': float(max_drift),
             'timestamp': latest_accuracy['timestamp']
         }
     
@@ -332,6 +395,11 @@ class MetricsMCPServer:
         """Load metrics from simulated data"""
         with self.lock:
             for _, row in df.iterrows():
+                # Ensure date is pandas Timestamp
+                date_val = row['date']
+                if not isinstance(date_val, pd.Timestamp):
+                    date_val = pd.Timestamp(date_val)
+                
                 # Store each metric
                 for metric in ['accuracy', 'precision', 'recall', 'f1_score']:
                     if metric in row:
@@ -339,7 +407,7 @@ class MetricsMCPServer:
                             'model_id': row['model_id'],
                             'metric_name': metric,
                             'value': row[metric],
-                            'timestamp': pd.to_datetime(row['date'])
+                            'timestamp': date_val
                         })
                 
                 # Store latency metrics
@@ -349,7 +417,7 @@ class MetricsMCPServer:
                             'model_id': row['model_id'],
                             'metric_name': metric,
                             'value': row[metric],
-                            'timestamp': pd.to_datetime(row['date'])
+                            'timestamp': date_val
                         })
         
         return {
@@ -361,13 +429,18 @@ class MetricsMCPServer:
         """Load drift scores from simulated data"""
         with self.lock:
             for _, row in df.iterrows():
+                # Ensure date is pandas Timestamp
+                date_val = row['date']
+                if not isinstance(date_val, pd.Timestamp):
+                    date_val = pd.Timestamp(date_val)
+                
                 for drift_type in ['covariate_drift', 'prediction_drift', 'concept_drift', 'overall_drift_score']:
                     if drift_type in row:
                         self.drift_scores.append({
                             'model_id': row['model_id'],
                             'drift_type': drift_type,
                             'score': row[drift_type],
-                            'timestamp': pd.to_datetime(row['date'])
+                            'timestamp': date_val
                         })
         
         return {
@@ -436,7 +509,7 @@ class IncidentsMCPServer:
                 alert_type=alert_type,
                 severity=severity,
                 message=message,
-                created_at=datetime.now(),
+                created_at=pd.Timestamp(datetime.now()),  # Convert to pandas Timestamp
                 metadata=metadata or {}
             )
             
@@ -476,7 +549,7 @@ class IncidentsMCPServer:
         with self.lock:
             for alert in self.alerts:
                 if alert.alert_id == alert_id:
-                    alert.resolved_at = datetime.now()
+                    alert.resolved_at = pd.Timestamp(datetime.now())  # Convert to pandas Timestamp
                     return {
                         'status': 'success',
                         'message': f'Alert {alert_id} resolved'
@@ -505,7 +578,7 @@ class IncidentsMCPServer:
                 root_cause=root_cause,
                 impact=impact,
                 status='open',
-                created_at=datetime.now(),
+                created_at=pd.Timestamp(datetime.now()),  # Convert to pandas Timestamp
                 remediation_actions=[]
             )
             
@@ -532,7 +605,7 @@ class IncidentsMCPServer:
                 'action_type': action_type,
                 'details': details,
                 'outcome': outcome,
-                'timestamp': datetime.now()
+                'timestamp': pd.Timestamp(datetime.now())  # Convert to pandas Timestamp
             }
             
             self.remediation_actions.append(action)
@@ -562,8 +635,12 @@ class IncidentsMCPServer:
                 if i.model_id == model_id
             ]
             
-            # Sort by creation time, most recent first
-            model_incidents.sort(key=lambda x: x.created_at, reverse=True)
+            # Safe sorting by creation time
+            def safe_timestamp(i):
+                ts = i.created_at
+                return pd.Timestamp(ts) if not isinstance(ts, pd.Timestamp) else ts
+            
+            model_incidents.sort(key=safe_timestamp, reverse=True)
             model_incidents = model_incidents[:limit]
         
         return {
@@ -599,24 +676,24 @@ class MCPManager:
             if not os.path.isdir(model_path):
                 continue
             
-            # Load predictions
+            # Load predictions with timestamp parsing
             predictions_file = os.path.join(model_path, 'predictions.csv')
             if os.path.exists(predictions_file):
-                df = pd.read_csv(predictions_file)
+                df = pd.read_csv(predictions_file, parse_dates=['timestamp'])
                 self.predictions_server.bulk_load_from_dataframe(df)
                 print(f"  Loaded {len(df)} predictions for {model_dir}")
             
-            # Load metrics
+            # Load metrics with date parsing
             metrics_file = os.path.join(model_path, 'metrics.csv')
             if os.path.exists(metrics_file):
-                df = pd.read_csv(metrics_file)
+                df = pd.read_csv(metrics_file, parse_dates=['date'])
                 self.metrics_server.bulk_load_metrics_from_dataframe(df)
                 print(f"  Loaded metrics for {model_dir}")
             
-            # Load drift scores
+            # Load drift scores with date parsing
             drift_file = os.path.join(model_path, 'drift_scores.csv')
             if os.path.exists(drift_file):
-                df = pd.read_csv(drift_file)
+                df = pd.read_csv(drift_file, parse_dates=['date'])
                 self.metrics_server.bulk_load_drift_from_dataframe(df)
                 print(f"  Loaded drift scores for {model_dir}")
         
@@ -705,7 +782,7 @@ class QueryPredictionsTool(BaseTool):
             model_id=model_id,
             window_hours=hours
         )
-        return json.dumps(result, indent=2)
+        return json.dumps(result, indent=2, default=str)
 
 class QueryMetricsInput(BaseModel):
     """Input for querying metrics"""
@@ -723,7 +800,14 @@ class QueryMetricsTool(BaseTool):
             model_id=model_id,
             metric_name=metric_name
         )
-        return json.dumps(result, indent=2)
+        
+        # Convert timestamps to strings for JSON serialization
+        if result['status'] == 'success' and 'timeseries' in result:
+            for item in result['timeseries']:
+                if 'timestamp' in item and hasattr(item['timestamp'], 'isoformat'):
+                    item['timestamp'] = item['timestamp'].isoformat()
+        
+        return json.dumps(result, indent=2, default=str)
 
 class QueryDriftInput(BaseModel):
     """Input for querying drift scores"""
@@ -739,7 +823,14 @@ class QueryDriftTool(BaseTool):
         result = self.mcp_manager.metrics_server.get_latest_drift_scores(
             model_id=model_id
         )
-        return json.dumps(result, indent=2)
+        
+        # Convert timestamps in drift scores
+        if result['status'] == 'success' and 'drift_scores' in result:
+            for drift_type, drift_data in result['drift_scores'].items():
+                if 'timestamp' in drift_data and hasattr(drift_data['timestamp'], 'isoformat'):
+                    drift_data['timestamp'] = drift_data['timestamp'].isoformat()
+        
+        return json.dumps(result, indent=2, default=str)
 
 class QueryModelHealthInput(BaseModel):
     """Input for querying model health"""
@@ -755,7 +846,12 @@ class QueryModelHealthTool(BaseTool):
         result = self.mcp_manager.metrics_server.get_model_health(
             model_id=model_id
         )
-        return json.dumps(result, indent=2)
+        
+        # Convert timestamp if present
+        if 'timestamp' in result and hasattr(result['timestamp'], 'isoformat'):
+            result['timestamp'] = result['timestamp'].isoformat()
+        
+        return json.dumps(result, indent=2, default=str)
 
 class CreateAlertInput(BaseModel):
     """Input for creating alerts"""
@@ -777,7 +873,7 @@ class CreateAlertTool(BaseTool):
             severity=severity,
             message=message
         )
-        return json.dumps(result, indent=2)
+        return json.dumps(result, indent=2, default=str)
 
 
 if __name__ == "__main__":
