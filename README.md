@@ -23,7 +23,7 @@
 
 ---
 
-## 🚀 Quick Start (5 Minutes)
+## 🚀 Quick Start
 
 ```bash
 # 1. Install dependencies

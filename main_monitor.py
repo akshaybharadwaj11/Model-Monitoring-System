@@ -31,20 +31,32 @@ class MonitoringSystemSimulation:
         data_dir: str = './simulated_data',
         output_dir: str = './simulation_results',
         use_llm: bool = False,
-        openai_api_key: str = None
+        openai_api_key: str = None,
+        use_real_data: bool = False
     ):
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True, parents=True)
         self.use_llm = use_llm
+        self.use_real_data = use_real_data
         
         # Initialize components
         print("Initializing ML Model Monitoring System...")
         
-        # 1. Generate simulated data
-        print("\n1. Generating simulated model data...")
-        simulator = ModelDataSimulator(seed=42)
-        self.model_data = simulator.save_to_files(self.data_dir)
+        # 1. Generate or load data
+        if use_real_data:
+            print("\n1. Using REAL bike-sharing data...")
+            # Check if real data exists
+            bike_model_dir = self.data_dir / 'bike_demand_v1'
+            if not bike_model_dir.exists():
+                print("   ⚠️  Real data not found. Run: python real_data_loader.py first")
+                print("   Falling back to simulated data...")
+                self._generate_simulated_data()
+            else:
+                print(f"   ✓ Found real data in {bike_model_dir}")
+        else:
+            print("\n1. Generating simulated model data...")
+            self._generate_simulated_data()
         
         # 2. Initialize MCP servers
         print("\n2. Initializing MCP servers...")
@@ -89,6 +101,11 @@ class MonitoringSystemSimulation:
         )
         
         print("\n✓ System initialization complete!\n")
+    
+    def _generate_simulated_data(self):
+        """Generate simulated data"""
+        simulator = ModelDataSimulator(seed=42)
+        self.model_data = simulator.save_to_files(self.data_dir)
     
     def run_30_day_simulation(
         self,
@@ -301,6 +318,10 @@ class MonitoringSystemSimulation:
         """Generate visualization plots"""
         print("\n5. GENERATING VISUALIZATIONS")
         
+        if not days or not accuracies:
+            print("   ⚠️  Insufficient data for visualization")
+            return
+        
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
         fig.suptitle(f'ML Model Monitoring System - 30 Day Simulation\nModel: {model_id}', 
                      fontsize=16, fontweight='bold')
@@ -331,24 +352,35 @@ class MonitoringSystemSimulation:
         
         # Plot 3: RL Rewards (cumulative)
         ax3 = axes[1, 0]
-        cumulative_rewards = np.cumsum(rewards)
-        ax3.plot(range(len(cumulative_rewards)), cumulative_rewards, 'g-', linewidth=2)
-        ax3.set_xlabel('Episode')
-        ax3.set_ylabel('Cumulative Reward')
-        ax3.set_title('RL Agent Learning Progress')
-        ax3.grid(True, alpha=0.3)
+        if rewards:
+            cumulative_rewards = np.cumsum(rewards)
+            ax3.plot(range(len(cumulative_rewards)), cumulative_rewards, 'g-', linewidth=2)
+            ax3.set_xlabel('Episode')
+            ax3.set_ylabel('Cumulative Reward')
+            ax3.set_title('RL Agent Learning Progress')
+            ax3.grid(True, alpha=0.3)
+        else:
+            ax3.text(0.5, 0.5, 'No reward data available', 
+                    ha='center', va='center', transform=ax3.transAxes)
         
         # Plot 4: Action distribution
         ax4 = axes[1, 1]
         action_counts = self.rl_agent.action_counts
         action_names = [a.name for a in self.rl_agent.ACTIONS]
-        ax4.bar(range(len(action_names)), action_counts, color='steelblue')
-        ax4.set_xlabel('Action')
-        ax4.set_ylabel('Count')
-        ax4.set_title('RL Agent Action Distribution')
-        ax4.set_xticks(range(len(action_names)))
-        ax4.set_xticklabels(action_names, rotation=45, ha='right')
-        ax4.grid(True, alpha=0.3, axis='y')
+        # Only show actions that were used
+        used_actions = [(name, count) for name, count in zip(action_names, action_counts) if count > 0]
+        if used_actions:
+            names, counts = zip(*used_actions)
+            ax4.bar(range(len(names)), counts, color='steelblue')
+            ax4.set_xlabel('Action')
+            ax4.set_ylabel('Count')
+            ax4.set_title('RL Agent Action Distribution')
+            ax4.set_xticks(range(len(names)))
+            ax4.set_xticklabels(names, rotation=45, ha='right')
+            ax4.grid(True, alpha=0.3, axis='y')
+        else:
+            ax4.text(0.5, 0.5, 'No actions taken yet', 
+                    ha='center', va='center', transform=ax4.transAxes)
         
         plt.tight_layout()
         
@@ -373,7 +405,8 @@ def main():
         choices=[
             'pneumonia_classifier_v1',
             'fraud_detector_v2',
-            'object_detector_v1'
+            'object_detector_v1',
+            'bike_demand_v1'
         ],
         help='Model to monitor'
     )
@@ -382,6 +415,12 @@ def main():
         '--use-llm',
         action='store_true',
         help='Use actual LLM for agent reasoning (requires OpenAI key)'
+    )
+    
+    parser.add_argument(
+        '--use-real-data',
+        action='store_true',
+        help='Use real bike-sharing dataset instead of simulated data'
     )
     
     parser.add_argument(
