@@ -49,6 +49,9 @@ class ModelMonitoringOrchestrator:
             'rl_episodes': 0,
             'avg_rl_reward': 0
         }
+        
+        # Track current state per model (overrides CSV data)
+        self.live_model_state = {}
     
     def run_monitoring_cycle(
         self,
@@ -64,10 +67,42 @@ class ModelMonitoringOrchestrator:
         logger.info(f"{'='*80}\n")
         
         try:
-            # Get current monitoring data from MCP
-            monitoring_data = self.mcp_manager.get_monitoring_data(model_id)
+            # Get base monitoring data from MCP
+            base_monitoring_data = self.mcp_manager.get_monitoring_data(model_id)
+            
+            # Initialize or update live state
+            if model_id not in self.live_model_state:
+                self.live_model_state[model_id] = {
+                    'current_accuracy': base_monitoring_data['current_accuracy'],
+                    'drift_score': base_monitoring_data['drift_score'],
+                    'last_remediation_day': -1
+                }
+            
+            # Apply natural drift over time (if no recent remediation)
+            days_since_remediation = day - self.live_model_state[model_id]['last_remediation_day']
+            if days_since_remediation > 3:
+                # Natural drift increases over time
+                drift_increase = min(0.015 * days_since_remediation, 0.3)
+                self.live_model_state[model_id]['drift_score'] = min(
+                    base_monitoring_data['drift_score'] + drift_increase,
+                    0.50
+                )
+                # Accuracy degrades with drift
+                accuracy_degradation = min(0.002 * days_since_remediation, 0.15)
+                self.live_model_state[model_id]['current_accuracy'] = max(
+                    base_monitoring_data['current_accuracy'] - accuracy_degradation,
+                    0.70
+                )
+            
+            # Use live state (which gets updated by RL actions and natural drift)
+            monitoring_data = base_monitoring_data.copy()
+            monitoring_data['current_accuracy'] = self.live_model_state[model_id]['current_accuracy']
+            monitoring_data['drift_score'] = self.live_model_state[model_id]['drift_score']
+            monitoring_data['days_since_retrain'] = days_since_remediation
+            
             logger.info(f"Current Accuracy: {monitoring_data['current_accuracy']:.3f}")
             logger.info(f"Drift Score: {monitoring_data['drift_score']:.3f}")
+            logger.info(f"Days Since Remediation: {days_since_remediation}")
             logger.info(f"Active Alerts: {monitoring_data['alert_count']}")
             
             # Create agents (import here to avoid circular dependency)
@@ -90,8 +125,23 @@ class ModelMonitoringOrchestrator:
             rl_decision = self._execute_rl_remediation(
                 monitoring_data,
                 analysis_results,
-                model_id
+                model_id,
+                day
             )
+            
+            # Update live state based on RL action outcome
+            if 'outcome' in rl_decision:
+                outcome = rl_decision['outcome']
+                self.live_model_state[model_id]['current_accuracy'] = outcome['accuracy_after']
+                
+                # Drift reduces significantly after retraining
+                if rl_decision['action_id'] in [0, 1, 2]:  # Retraining actions
+                    self.live_model_state[model_id]['drift_score'] = max(0.02, monitoring_data['drift_score'] * 0.2)
+                    self.live_model_state[model_id]['last_remediation_day'] = day
+                    logger.info(f"✓ Model retrained! Drift reduced to {self.live_model_state[model_id]['drift_score']:.3f}")
+                # Drift reduces slightly with threshold adjustment
+                elif rl_decision['action_id'] in [4, 5]:  # Quick fixes
+                    self.live_model_state[model_id]['drift_score'] = max(0.02, monitoring_data['drift_score'] * 0.8)
             
             # Store results
             self.session_memory['monitoring_runs'].append({
@@ -114,6 +164,7 @@ class ModelMonitoringOrchestrator:
                 )
             
             logger.info(f"\n✓ Monitoring cycle complete")
+            logger.info(f"Updated State - Accuracy: {self.live_model_state[model_id]['current_accuracy']:.3f}, Drift: {self.live_model_state[model_id]['drift_score']:.3f}")
             
             return {
                 'status': 'success',
@@ -142,8 +193,6 @@ class ModelMonitoringOrchestrator:
         Execute REAL CrewAI workflow with LLM agents
         This makes actual OpenAI API calls
         """
-        from crewai import Crew, Task, Process
-        
         try:
             # Create tasks for the workflow
             tasks = self._create_llm_tasks(agents, model_id, monitoring_data)
@@ -425,7 +474,8 @@ class ModelMonitoringOrchestrator:
         self,
         monitoring_data: Dict,
         analysis_results: Dict,
-        model_id: str
+        model_id: str,
+        day: int
     ) -> Dict[str, Any]:
         """
         Use RL agent to select and execute remediation action
@@ -442,6 +492,20 @@ class ModelMonitoringOrchestrator:
         logger.info(f"RL Agent selected: {action_info.name}")
         logger.info(f"Action probability: {action_prob:.3f}")
         logger.info(f"Value estimate: {value:.3f}")
+        
+        # Use threshold bandit for alert decision
+        if analysis_results['alert']['should_alert']:
+            threshold = self.threshold_bandit.select_threshold()
+            alert_triggered = monitoring_data['drift_score'] > (threshold - 0.70)
+            
+            # Update bandit based on outcome
+            was_real_issue = monitoring_data['current_accuracy'] < 0.80 or monitoring_data['drift_score'] > 0.25
+            self.threshold_bandit.update(threshold, {
+                'alert_triggered': alert_triggered,
+                'was_real_issue': was_real_issue
+            })
+            
+            logger.info(f"Threshold Bandit selected threshold: {threshold:.2f}")
         
         # Simulate action outcome based on current state
         outcome = self._simulate_action_outcome(
@@ -460,6 +524,7 @@ class ModelMonitoringOrchestrator:
         # Store experience for training
         next_monitoring_data = monitoring_data.copy()
         next_monitoring_data['current_accuracy'] = outcome['accuracy_after']
+        next_monitoring_data['drift_score'] = max(0.02, monitoring_data['drift_score'] * 0.5) if action in [0,1,2] else monitoring_data['drift_score']
         next_state = self.rl_agent.get_state(next_monitoring_data)
         
         self.rl_agent.store_experience(
