@@ -273,7 +273,7 @@ reward = (accuracy_improvement × 200)    # Primary signal
 
 ### Challenge 1: Real Data Integration
 
-**Problem:** UCI bike-sharing dataset has different schema than simulated data format.
+**Problem:** Due to unavailability of real world dataset containing accuracy, drift, latency, etc. Utilized UCI bike-sharing dataset and computed metrics manually.
 
 **Solution:** Created data loader that:
 - Trains Random Forest on first 60% of data
@@ -282,7 +282,6 @@ reward = (accuracy_improvement × 200)    # Primary signal
 - Computes drift using Kolmogorov-Smirnov statistical tests
 - Formats output to match MCP server expectations
 
-**Code:** `real_data_loader.py` - 200 lines
 
 ### Challenge 2: Timestamp Type Consistency
 
@@ -685,11 +684,6 @@ This enables realistic action-outcome feedback loops.
    - Generate natural language justifications
    - Visualize policy decision boundaries
    - Build trust with ML engineers
-
-4. **Multi-Objective Optimization**
-   - Optimize accuracy + cost + latency simultaneously
-   - Pareto-optimal action selection
-   - Configurable objective weights
 
 ---
 

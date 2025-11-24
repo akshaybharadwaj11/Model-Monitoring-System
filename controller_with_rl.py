@@ -105,8 +105,8 @@ class ModelMonitoringOrchestrator:
             logger.info(f"Days Since Remediation: {days_since_remediation}")
             logger.info(f"Active Alerts: {monitoring_data['alert_count']}")
             
-            # Create agents (import here to avoid circular dependency)
-            from specialized_monitoring_agents import create_monitoring_agents, create_monitoring_tasks
+            # Create agents 
+            from specialized_monitoring_agents import create_monitoring_agents
             
             agents = create_monitoring_agents(self.llm, self.mcp_manager)
             
@@ -191,7 +191,6 @@ class ModelMonitoringOrchestrator:
     ) -> Dict[str, Any]:
         """
         Execute REAL CrewAI workflow with LLM agents
-        This makes actual OpenAI API calls
         """
         try:
             # Create tasks for the workflow
@@ -209,7 +208,7 @@ class ModelMonitoringOrchestrator:
             
             logger.info("Executing CrewAI workflow with LLM agents...")
             
-            # Execute crew (THIS MAKES REAL API CALLS)
+            # Execute crew 
             result = crew.kickoff()
             
             logger.info("LLM workflow complete!")
@@ -393,8 +392,7 @@ class ModelMonitoringOrchestrator:
         model_id: str
     ) -> Dict[str, Any]:
         """
-        Simulate agent analysis (simplified for demo)
-        In production: Would run full CrewAI tasks with LLM
+        Simulate agent analysis
         """
         
         accuracy = monitoring_data['current_accuracy']
